@@ -8,8 +8,6 @@ services:
       context: ./backend
     container_name: medaltea_vector_db
     command: uvicorn backend.vector_db_api:app --host 0.0.0.0 --port 8001
-    env_file:
-      - ./backend/.env
     environment:
       - CONNECTION_STRING_PGVECTOR=${CONNECTION_STRING_PGVECTOR}
       - COLLECTION_NAME=${COLLECTION_NAME:-my_docs}
@@ -21,7 +19,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 60s  # HuggingFace model download on first run
+      start_period: 60s
     restart: unless-stopped
  
   data_init:
@@ -45,13 +43,11 @@ services:
       context: ./backend
     container_name: medaltea_rag_api
     command: uvicorn backend.rag_api:app --host 0.0.0.0 --port 8000
-    env_file:
-      - ./backend/.env
     environment:
       - GROQ_API_KEY=${GROQ_API_KEY}
       - CONNECTION_STRING_PGVECTOR=${CONNECTION_STRING_PGVECTOR}
       - VECTOR_DB_API_URL=http://vector_db_api:8001
-      - CHAT_MODEL=${CHAT_MODEL:openai/gpt-oss-120b}
+      - CHAT_MODEL=${CHAT_MODEL:-llama-3.3-70b-versatile}
     ports:
       - "127.0.0.1:8000:8000"
     networks:
@@ -68,7 +64,6 @@ services:
       retries: 5
     restart: unless-stopped
  
-  # Optional: Expose Vector DB API on localhost only
   vector_db_api_expose:
     image: alpine/socat
     container_name: medaltea_vector_db_expose
@@ -84,3 +79,4 @@ services:
 networks:
   medaltea_network:
     driver: bridge
+ 
