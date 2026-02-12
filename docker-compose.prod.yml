@@ -1,47 +1,29 @@
 # Production Docker Compose Configuration for Medaltea Backend
-# This configuration is optimized for VPS deployment
-
+# BDD PGVector EXTERNE — Groq LLM — HuggingFace embeddings (local, gratuit)
+ 
 services:
-  db:
-    image: pgvector/pgvector:pg16
-    container_name: medaltea_db
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    volumes:
-      - db_data:/var/lib/postgresql/data
-    networks:
-      - medaltea_network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -d ${POSTGRES_DB} -U ${POSTGRES_USER}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
+ 
   vector_db_api:
     build:
       context: ./backend
     container_name: medaltea_vector_db
     command: uvicorn backend.vector_db_api:app --host 0.0.0.0 --port 8001
+    env_file:
+      - ./backend/.env
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - CONNECTION_STRING_PGVECTOR=${CONNECTION_STRING_PGVECTOR}
-      - COLLECTION_NAME=${COLLECTION_NAME}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
+      - COLLECTION_NAME=${COLLECTION_NAME:-my_docs}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
     networks:
       - medaltea_network
-    depends_on:
-      db:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 60s  # HuggingFace model download on first run
     restart: unless-stopped
-
+ 
   data_init:
     image: python:3.11-slim
     container_name: medaltea_data_init
@@ -57,18 +39,19 @@ services:
       vector_db_api:
         condition: service_healthy
     restart: "no"
-
+ 
   rag_api:
     build:
       context: ./backend
     container_name: medaltea_rag_api
     command: uvicorn backend.rag_api:app --host 0.0.0.0 --port 8000
+    env_file:
+      - ./backend/.env
     environment:
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - CONNECTION_STRING_PGVECTOR=${CONNECTION_STRING_PGVECTOR}
       - VECTOR_DB_API_URL=http://vector_db_api:8001
-      - CHAT_MODEL=${CHAT_MODEL}
+      - CHAT_MODEL=${CHAT_MODEL:openai/gpt-oss-120b}
     ports:
       - "127.0.0.1:8000:8000"
     networks:
@@ -84,7 +67,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
-
+ 
   # Optional: Expose Vector DB API on localhost only
   vector_db_api_expose:
     image: alpine/socat
@@ -97,11 +80,7 @@ services:
     depends_on:
       - vector_db_api
     restart: unless-stopped
-
+ 
 networks:
   medaltea_network:
     driver: bridge
-
-volumes:
-  db_data:
-    driver: local
