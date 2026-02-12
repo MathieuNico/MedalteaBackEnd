@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+python-multipart
+langchain-core
+langchain-groq
+langchain-postgres
+langchain-community
+langchain-text-splitters
+pydantic
+psycopg[binary]
+sqlalchemy
+pypdf
+openai
+langchain
+groq
