@@ -1,15 +1,29 @@
 fastapi
 uvicorn
 python-multipart
-langchain-core
-langchain-groq
-langchain-postgres
-langchain-community
-langchain-text-splitters
 pydantic
+pydantic-settings
+python-dotenv
+httpx
+
+# LangChain core
+langchain
+langchain-core
+langchain-text-splitters
+langchain-community
+langchain-postgres
+
+# LLM: Groq
+langchain-groq
+groq
+
+# Embeddings: HuggingFace (free, local)
+langchain-huggingface
+sentence-transformers
+
+# Database
 psycopg[binary]
 sqlalchemy
+
+# Document loaders
 pypdf
-openai
-langchain
-groq

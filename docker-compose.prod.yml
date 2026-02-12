@@ -1,25 +1,62 @@
 # Production Docker Compose Configuration for Medaltea Backend
 # This configuration is optimized for VPS deployment
-# Connects to external pgvector database: 185.98.128.173:40113
 
 services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: medaltea_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - medaltea_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d ${POSTGRES_DB} -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   vector_db_api:
     build:
       context: ./backend
     container_name: medaltea_vector_db
     command: uvicorn backend.vector_db_api:app --host 0.0.0.0 --port 8001
     environment:
-      - CONNECTION_STRING_PGVECTOR=postgresql://${PGVECTOR_USER}:${PGVECTOR_PASSWORD}@185.98.128.173:40113/${PGVECTOR_DATABASE}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CONNECTION_STRING_PGVECTOR=${CONNECTION_STRING_PGVECTOR}
       - COLLECTION_NAME=${COLLECTION_NAME}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL}
     networks:
       - medaltea_network
+    depends_on:
+      db:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+
+  data_init:
+    image: python:3.11-slim
+    container_name: medaltea_data_init
+    volumes:
+      - ./data:/app/data
+    working_dir: /app
+    entrypoint: ["/bin/bash", "/app/data/ingest_all.sh"]
+    environment:
+      - VECTOR_DB_API_URL=http://vector_db_api:8001
+    networks:
+      - medaltea_network
+    depends_on:
+      vector_db_api:
+        condition: service_healthy
+    restart: "no"
 
   rag_api:
     build:
@@ -28,7 +65,8 @@ services:
     command: uvicorn backend.rag_api:app --host 0.0.0.0 --port 8000
     environment:
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - CONNECTION_STRING_PGVECTOR=postgresql://${PGVECTOR_USER}:${PGVECTOR_PASSWORD}@185.98.128.173:40113/${PGVECTOR_DATABASE}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CONNECTION_STRING_PGVECTOR=${CONNECTION_STRING_PGVECTOR}
       - VECTOR_DB_API_URL=http://vector_db_api:8001
       - CHAT_MODEL=${CHAT_MODEL}
     ports:
@@ -38,6 +76,8 @@ services:
     depends_on:
       vector_db_api:
         condition: service_healthy
+      data_init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -45,6 +85,23 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # Optional: Expose Vector DB API on localhost only
+  vector_db_api_expose:
+    image: alpine/socat
+    container_name: medaltea_vector_db_expose
+    command: TCP-LISTEN:8001,fork,reuseaddr TCP:vector_db_api:8001
+    ports:
+      - "127.0.0.1:8001:8001"
+    networks:
+      - medaltea_network
+    depends_on:
+      - vector_db_api
+    restart: unless-stopped
+
 networks:
   medaltea_network:
     driver: bridge
+
+volumes:
+  db_data:
+    driver: local

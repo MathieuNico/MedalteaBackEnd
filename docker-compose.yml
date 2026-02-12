@@ -1,0 +1,63 @@
+# =====================================================
+# Medaltea — docker-compose.yml
+# Architecture: BDD PGVector EXTERNE + Groq LLM + HuggingFace embeddings
+# =====================================================
+
+services:
+
+  # --- Backend: Vector DB API (embeddings + search) ---
+  vector_db_api:
+    build:
+      context: ./backend
+    container_name: vector_db_api
+    command: uvicorn backend.vector_db_api:app --host 0.0.0.0 --port 8001
+    env_file:
+      - ./backend/.env
+    environment:
+      # Override pour Docker (la connection string pointe vers la BDD externe)
+      - CONNECTION_STRING_PGVECTOR=postgresql+psycopg://myuser:mypassword@185.98.128.173:40113/mydatabase
+      - COLLECTION_NAME=${COLLECTION_NAME:-my_docs}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s  # HuggingFace model loading takes time
+
+  # --- Data ingestion (run once) ---
+  data_init:
+    image: python:3.11-slim
+    container_name: data_init
+    volumes:
+      - ./data:/app/data
+    working_dir: /app
+    entrypoint: ["/bin/bash", "/app/data/ingest_all.sh"]
+    environment:
+      - VECTOR_DB_API_URL=http://vector_db_api:8001
+    depends_on:
+      vector_db_api:
+        condition: service_healthy
+
+  # --- Backend: RAG API (LLM chat) ---
+  rag_api:
+    build:
+      context: ./backend
+    container_name: rag_api
+    command: uvicorn backend.rag_api:app --host 0.0.0.0 --port 8000
+    env_file:
+      - ./backend/.env
+    environment:
+      - CONNECTION_STRING_PGVECTOR=postgresql+psycopg://myuser:mypassword@185.98.128.173:40113/mydatabase
+      - VECTOR_DB_API_URL=http://vector_db_api:8001
+      - CHAT_MODEL=${CHAT_MODEL:-llama-3.3-70b-versatile}
+    ports:
+      - "8000:8000"
+    depends_on:
+      vector_db_api:
+        condition: service_healthy
+      data_init:
+        condition: service_completed_successfully
+  

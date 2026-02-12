@@ -1,6 +1,8 @@
 """
 Vector Database API with FastAPI and LangChain.
 Provides similarity search and document management for PGVector.
+
+Uses HuggingFace embeddings (free, local) instead of OpenAI.
 """
 
 from contextlib import asynccontextmanager
@@ -11,7 +13,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from langchain_core.documents import Document
-from langchain_openai import OpenAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_postgres import PGVector
 from langchain_community.document_loaders import TextLoader, PyPDFLoader, CSVLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -20,6 +22,7 @@ import psycopg
 from sqlalchemy import create_engine
 
 from .config import config, logger
+
 
 class SearchRequest(BaseModel):
     """Similarity search request."""
@@ -49,10 +52,7 @@ def _load_document_from_file(file_path: str, filename: str) -> List[Document]:
             loader = PyPDFLoader(file_path)
             docs = loader.load()
         elif file_ext == '.csv':
-            # Use CSVLoader. source_column can be useful if one column is the "key", 
-            # effectively each row becomes a document.
-            # Default behavior: each row is a document, content is all columns formatted as key: value
-            loader = CSVLoader(file_path, encoding='utf-8') 
+            loader = CSVLoader(file_path, encoding='utf-8')
             docs = loader.load()
         else:
             raise ValueError(f"Unsupported file type: {file_ext}")
@@ -103,7 +103,7 @@ def _remove_documents_from_db(source: str, filename: str) -> bool:
                     """,
                     (source, filename, config.collection_name, filename)
                 )
-                
+
                 deleted_count = cur.rowcount
                 conn.commit()
 
@@ -124,16 +124,23 @@ async def lifespan(app: FastAPI):
     """Manage app startup and shutdown."""
     try:
         logger.info("Starting Vector DB API...")
-        logger.info(f"Initializing embeddings: {config.embedding_model}")
-        app_state["embeddings"] = OpenAIEmbeddings(model=config.embedding_model)
 
+        # --- Embeddings: HuggingFace (free, local) ---
+        logger.info(f"Loading HuggingFace embeddings: {config.embedding_model}")
+        app_state["embeddings"] = HuggingFaceEmbeddings(
+            model_name=config.embedding_model,
+            model_kwargs={"device": "cpu"},
+            encode_kwargs={"normalize_embeddings": True},
+        )
+        logger.info("✓ Embeddings loaded")
+
+        # --- PGVector connection ---
         logger.info(f"Connecting to PGVector (collection: {config.collection_name})")
         if not config.connection_string_pgvector:
             raise ValueError("PGVector connection string not configured")
-        
-        # Create SQLAlchemy engine from connection string
+
         engine = _get_sqlalchemy_engine(config.connection_string_pgvector)
-        
+
         app_state["vector_store"] = PGVector(
             embeddings=app_state["embeddings"],
             collection_name=config.collection_name,
@@ -239,7 +246,7 @@ async def get_documents_info():
                     """,
                     (config.collection_name, config.collection_name)
                 )
-                
+
                 documents_data = cur.fetchall()
                 documents_info = []
                 for source, filename, file_type, chunks_count in documents_data:
@@ -280,7 +287,6 @@ async def add_document(file: UploadFile = File(...)):
             )
 
         vector_store: PGVector = app_state["vector_store"]
-        embeddings: OpenAIEmbeddings = app_state["embeddings"]
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_file:
             content = await file.read()
@@ -299,14 +305,13 @@ async def add_document(file: UploadFile = File(...)):
             chunks = _split_documents(documents)
             logger.info(f"Split into {len(chunks)} chunks")
 
-            # Add documents in batches to avoid huge transactions
+            # Add documents in batches
             batch_size = 1000
             total_added = 0
-            
+
             for i in range(0, len(chunks), batch_size):
                 batch = chunks[i:i + batch_size]
-                logger.info(f"Adding batch {i//batch_size + 1}/{len(chunks)//batch_size + 1} ({len(batch)} chunks)")
-                # Run synchronous add_documents in a thread pool to avoid blocking the event loop
+                logger.info(f"Adding batch {i // batch_size + 1}/{len(chunks) // batch_size + 1} ({len(batch)} chunks)")
                 from starlette.concurrency import run_in_threadpool
                 ids = await run_in_threadpool(vector_store.add_documents, documents=batch)
                 total_added += len(ids)
@@ -341,7 +346,6 @@ async def remove_document(request: RemoveDocumentRequest):
     try:
         logger.info(f"Removing document: {request.filename} (source: {request.source})")
 
-        # Remove from database
         removed = _remove_documents_from_db(request.source, request.filename)
 
         if removed:
