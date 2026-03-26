@@ -1,8 +1,6 @@
 services:
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${IMAGE_NAME:-ghcr.io/mathieunico/medalteabackend/api:latest}
     container_name: medaltea_api
     restart: always
     ports:
