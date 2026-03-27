@@ -11,14 +11,4 @@ export class RegisterDto {
     @IsNotEmpty({ message: 'Le mot de passe ne peut pas être vide' })
     @MinLength(6, { message: 'Le mot de passe doit faire au moins 6 caractères' })
     password: string;
-
-    @ApiProperty({ example: 'Dupont', description: "Le nom de famille de l'utilisateur" })
-    @IsString()
-    @IsNotEmpty({ message: 'Le nom est obligatoire' })
-    last_name: string;
-
-    @ApiProperty({ example: 'Jean', description: "Le prénom de l'utilisateur" })
-    @IsString()
-    @IsNotEmpty({ message: 'Le prénom est obligatoire' })
-    first_name: string;
 }
