@@ -7,37 +7,11 @@ services:
       - "3000:3000"
     environment:
       - PORT=3000
-      - DB_HOST=db
-      - DB_PORT=5432
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-40300}
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
-    depends_on:
-      db:
-        condition: service_healthy
-    networks:
-      - medaltea_network
-
-  db:
-    image: postgres:15-alpine
-    container_name: medaltea_db
-    restart: always
-    environment:
-      - POSTGRES_USER=${DB_USER}
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
-      - POSTGRES_DB=${DB_NAME}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - medaltea_network
-
-volumes:
-  pgdata:
 
 networks:
   medaltea_network:
