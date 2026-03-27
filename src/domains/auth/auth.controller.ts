@@ -19,6 +19,7 @@ export class AuthController {
   @ApiOperation({ summary: "Inscription d'un nouvel utilisateur" })
   @ApiResponse({ status: 201, description: 'Utilisateur créé avec succès' })
   @ApiResponse({ status: 400, description: 'Données invalides' })
+  @ApiResponse({ status: 409, description: 'Utilisateur existe déjà' })
   register(@Body() registerDto: RegisterDto) {
     return this.authService.register(registerDto);
   }
