@@ -67,8 +67,9 @@ jobs:
             echo "DB_USER=${{ secrets.DB_USER }}" > .env
             echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
             echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
-            echo "DB_HOST=db" >> .env
-            echo "DB_PORT=5432" >> .env
+            echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
+            echo "DB_PORT=${{ secrets.DB_PORT }}" >> .env
+            echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
             echo "PORT=3000" >> .env
             
             docker compose -f docker-compose.prod.yml pull
